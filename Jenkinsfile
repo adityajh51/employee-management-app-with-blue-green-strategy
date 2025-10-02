@@ -64,13 +64,13 @@ pipeline {
         sshagent(['swarm_key']) {
           withEnv([
             "TF_VAR_private_key=$HOME/.ssh/id_rsa",
-            "TF_VAR_ssh_public_key=\\$(cat \$HOME/.ssh/id_rsa.pub)"
+            '''TF_VAR_ssh_public_key=$(cat $HOME/.ssh/id_rsa.pub)'''
           ]) {
             dir("${TF_DIR}") {
-              sh """
+              sh '''
                 terraform init
                 terraform apply -auto-approve
-              """
+              '''
             }
           }
         }
