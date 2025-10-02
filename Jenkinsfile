@@ -1,6 +1,11 @@
 pipeline {
   agent any
 
+  parameters {
+    choice(name: 'TF_ACTION', choices: ['apply', 'destroy'], description: 'Choose Terraform action')
+    choice(name: 'DEPLOY_COLOR', choices: ['blue', 'green'], description: 'Choose which stack to deploy (used only for apply)')
+  }
+
   environment {
     REGISTRY = "naresh240"
     TF_DIR   = "infra"
@@ -9,12 +14,13 @@ pipeline {
   stages {
     stage('Checkout') {
       steps {
-        git branch: 'main', 
+        git branch: 'main',
             url: 'https://github.com/Naresh240/employee-management-app-with-blue-green-strategy.git'
       }
     }
 
     stage('Build Packages') {
+      when { expression { params.TF_ACTION == 'apply' } }
       parallel {
         stage('Backend Build') {
           steps { dir('backend') { sh 'mvn clean package -DskipTests' } }
@@ -26,6 +32,7 @@ pipeline {
     }
 
     stage('Build & Push Images') {
+      when { expression { params.TF_ACTION == 'apply' } }
       steps {
         script {
           def version = "v${env.BUILD_NUMBER}"
@@ -44,14 +51,14 @@ pipeline {
       }
     }
 
-    stage('Terraform Init & Apply') {
+    stage('Terraform Action') {
       steps {
         sshagent(['swarm_key']) {
           dir("${TF_DIR}") {
             withCredentials([aws(accessKeyVariable: 'AWS_ACCESS_KEY_ID', credentialsId: 'aws_creds', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
               sh """
                 terraform init
-                terraform apply -auto-approve
+                terraform ${params.TF_ACTION} -auto-approve
               """
             }
           }
@@ -60,31 +67,30 @@ pipeline {
     }
 
     stage('Get Manager IP') {
+      when { expression { params.TF_ACTION == 'apply' } }
       steps {
         script {
-          withCredentials([aws(accessKeyVariable: 'AWS_ACCESS_KEY_ID', credentialsId: 'aws_creds', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
-            env.MANAGER_IP = sh(
-              script: "cd ${TF_DIR} && terraform output -raw manager_ip",
-              returnStdout: true
-            ).trim()
-            echo "Manager IP: ${env.MANAGER_IP}"
-          }
+          env.MANAGER_IP = sh(
+            script: "cd ${TF_DIR} && terraform output -raw manager_ip",
+            returnStdout: true
+          ).trim()
+          echo "Manager IP: ${env.MANAGER_IP}"
         }
       }
     }
 
     stage('Blue-Green Deployment') {
+      when { expression { params.TF_ACTION == 'apply' } }
       steps {
         sshagent(['swarm_key']) {
-          sh "bash scripts/deploy_blue_green.sh ${MANAGER_IP} ${APP_VERSION}"
+          sh "bash scripts/deploy_blue_green.sh ${MANAGER_IP} ${APP_VERSION} ${params.DEPLOY_COLOR}"
         }
       }
     }
   }
 
   post {
-    failure {
-      echo "Deployment failed. Please check logs."
-    }
+    failure { echo "❌ Deployment failed. Please check logs." }
+    success { echo "✅ Pipeline completed successfully." }
   }
 }
