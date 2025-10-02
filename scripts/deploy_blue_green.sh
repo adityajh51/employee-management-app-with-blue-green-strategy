@@ -19,13 +19,25 @@ STACK_DB="docker-stack-db.yml"
 STACK_FILE="docker-stack-${TARGET}.yml"
 REMOTE_PATH="/home/ec2-user/${STACK_FILE}"
 REMOTE_DB_PATH="/home/ec2-user/${STACK_DB}"
+NETWORK_NAME="emp_network"
+
+# ------------------------------
+# Step 0: Ensure overlay network exists
+# ------------------------------
+echo "🔍 Checking if overlay network '$NETWORK_NAME' exists..."
+NETWORK_EXISTS=$(ssh ec2-user@$MANAGER_IP "docker network ls --format '{{.Name}}' | grep -w $NETWORK_NAME || true")
+if [ -z "$NETWORK_EXISTS" ]; then
+  echo "➡️ Network '$NETWORK_NAME' not found. Creating..."
+  ssh ec2-user@$MANAGER_IP "docker network create --driver overlay --attachable $NETWORK_NAME"
+else
+  echo "✅ Network '$NETWORK_NAME' already exists."
+fi
 
 # ------------------------------
 # Step 1: Ensure MySQL stack exists and is running
 # ------------------------------
 echo "🔍 Checking if MySQL stack is running..."
 DB_EXISTS=$(ssh ec2-user@$MANAGER_IP "docker stack ls --format '{{.Name}}' | grep -w empapp_db || true")
-
 if [ -z "$DB_EXISTS" ]; then
   echo "➡️ MySQL stack not found. Deploying..."
   scp -o StrictHostKeyChecking=no "$STACK_DB" ec2-user@$MANAGER_IP:$REMOTE_DB_PATH
@@ -34,7 +46,7 @@ else
   echo "✅ MySQL stack already exists."
 fi
 
-# Wait until at least one MySQL task is running
+# Wait until MySQL service is running
 echo "⏳ Waiting for MySQL service to be ready..."
 MAX_RETRIES=12
 SLEEP_TIME=5
@@ -68,7 +80,6 @@ fi
 echo "➡️ Deploying $TARGET stack on test port $TEST_FRONTEND_PORT..."
 scp -o StrictHostKeyChecking=no "$STACK_FILE" ec2-user@$MANAGER_IP:$REMOTE_PATH
 
-# Update backend/frontend image and test ports
 ssh ec2-user@$MANAGER_IP "
   sed -i 's|backend-app:.*|backend-app:${NEW_VERSION}|' $REMOTE_PATH
   sed -i 's|frontend-app:.*|frontend-app:${NEW_VERSION}|' $REMOTE_PATH
@@ -113,8 +124,6 @@ sleep 15
 echo "🔄 Switching $TARGET frontend to port 80..."
 ssh ec2-user@$MANAGER_IP "sed -i 's|${TEST_FRONTEND_PORT}:80|80:80|' $REMOTE_PATH"
 
-# Redeploy target stack on port 80
-echo "🚀 Redeploying $TARGET stack on port 80..."
 ssh ec2-user@$MANAGER_IP "docker stack deploy -c $REMOTE_PATH empapp_${TARGET}"
 
 echo "🎉 Deployment completed. $TARGET stack is now live on port 80."
