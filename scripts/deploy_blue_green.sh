@@ -3,34 +3,33 @@ set -e
 
 MANAGER_IP=$1
 NEW_VERSION=$2
-BLUE_STACK="empapp_blue"
-GREEN_STACK="empapp_green"
+TARGET=$3   # blue or green
 
-# Detect currently active stack
-ACTIVE_STACK=$(ssh -o StrictHostKeyChecking=no ec2-user@$MANAGER_IP \
-  "docker service ls --format '{{.Name}}' | grep ${BLUE_STACK}_frontend || true")
-
-if [ -n "$ACTIVE_STACK" ]; then
-  CURRENT="blue"
-  TARGET="green"
-else
-  CURRENT="green"
-  TARGET="blue"
+# If you still want auto-detection, you can add logic here
+if [ -z "$TARGET" ]; then
+  echo "No target color specified. Exiting."
+  exit 1
 fi
 
-echo "Current active stack: $CURRENT"
-echo "Deploying new version to $TARGET stack"
+# Determine opposite color for cleanup
+if [ "$TARGET" == "blue" ]; then
+  CURRENT="green"
+else
+  CURRENT="blue"
+fi
 
-# Copy appropriate stack file to manager
+echo "Deploying to $TARGET stack..."
+
+# Copy stack file
 scp -o StrictHostKeyChecking=no docker-stack-${TARGET}.yml ec2-user@$MANAGER_IP:/home/ec2-user/
 
-# Update stack file dynamically with new image tags
+# Update image versions
 ssh ec2-user@$MANAGER_IP \
   "sed -i 's|backend-app:.*|backend-app:${NEW_VERSION}|' /home/ec2-user/docker-stack-${TARGET}.yml"
 ssh ec2-user@$MANAGER_IP \
   "sed -i 's|frontend-app:.*|frontend-app:${NEW_VERSION}|' /home/ec2-user/docker-stack-${TARGET}.yml"
 
-# Deploy target stack
+# Deploy
 ssh ec2-user@$MANAGER_IP \
   "docker stack deploy -c /home/ec2-user/docker-stack-${TARGET}.yml empapp_${TARGET}"
 
@@ -40,12 +39,10 @@ sleep 60
 HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://$MANAGER_IP)
 
 if [ "$HEALTH" == "200" ]; then
-  echo "New version healthy, switching traffic"
-  
-  # Stop old stack
-  ssh ec2-user@$MANAGER_IP "docker stack rm empapp_${CURRENT}"
+  echo "✅ New version healthy. Removing old ${CURRENT} stack."
+  ssh ec2-user@$MANAGER_IP "docker stack rm empapp_${CURRENT} || true"
 else
-  echo "New version failed health check, rolling back"
+  echo "❌ Health check failed. Rolling back."
   ssh ec2-user@$MANAGER_IP "docker stack rm empapp_${TARGET}"
   exit 1
 fi
