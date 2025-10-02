@@ -15,7 +15,43 @@ if [ -z "$TARGET" ] || [ -z "$MANAGER_IP" ] || [ -z "$NEW_VERSION" ]; then
   exit 1
 fi
 
-# Determine opposite color
+STACK_DB="docker-stack-db.yml"
+STACK_FILE="docker-stack-${TARGET}.yml"
+REMOTE_PATH="/home/ec2-user/${STACK_FILE}"
+REMOTE_DB_PATH="/home/ec2-user/${STACK_DB}"
+
+# ------------------------------
+# Step 1: Ensure MySQL stack exists and is running
+# ------------------------------
+echo "🔍 Checking if MySQL stack is running..."
+DB_EXISTS=$(ssh ec2-user@$MANAGER_IP "docker stack ls --format '{{.Name}}' | grep -w empapp_db || true")
+
+if [ -z "$DB_EXISTS" ]; then
+  echo "➡️ MySQL stack not found. Deploying..."
+  scp -o StrictHostKeyChecking=no "$STACK_DB" ec2-user@$MANAGER_IP:$REMOTE_DB_PATH
+  ssh ec2-user@$MANAGER_IP "docker stack deploy -c $REMOTE_DB_PATH empapp_db"
+else
+  echo "✅ MySQL stack already exists."
+fi
+
+# Wait until at least one MySQL task is running
+echo "⏳ Waiting for MySQL service to be ready..."
+MAX_RETRIES=12
+SLEEP_TIME=5
+for i in $(seq 1 $MAX_RETRIES); do
+  RUNNING=$(ssh ec2-user@$MANAGER_IP "docker service ps empapp_db_mysqldb --filter 'desired-state=running' --format '{{.Name}}'" || true)
+  if [ -n "$RUNNING" ]; then
+    echo "✅ MySQL service is running."
+    break
+  else
+    echo "Waiting for MySQL... attempt $i/$MAX_RETRIES"
+    sleep $SLEEP_TIME
+  fi
+done
+
+# ------------------------------
+# Step 2: Determine target stack ports
+# ------------------------------
 if [ "$TARGET" == "blue" ]; then
   CURRENT="green"
   TEST_FRONTEND_PORT=8080
@@ -26,15 +62,13 @@ else
   TEST_BACKEND_PORT=8081
 fi
 
-STACK_FILE="docker-stack-${TARGET}.yml"
-REMOTE_PATH="/home/ec2-user/${STACK_FILE}"
-
+# ------------------------------
+# Step 3: Deploy target blue/green stack
+# ------------------------------
 echo "➡️ Deploying $TARGET stack on test port $TEST_FRONTEND_PORT..."
-
-# Copy stack file to manager
 scp -o StrictHostKeyChecking=no "$STACK_FILE" ec2-user@$MANAGER_IP:$REMOTE_PATH
 
-# Update images and frontend port for testing
+# Update images and test ports
 ssh ec2-user@$MANAGER_IP "
   sed -i 's|backend-app:.*|backend-app:${NEW_VERSION}|' $REMOTE_PATH
   sed -i 's|frontend-app:.*|frontend-app:${NEW_VERSION}|' $REMOTE_PATH
@@ -42,15 +76,13 @@ ssh ec2-user@$MANAGER_IP "
   sed -i 's|808[0-9]:8080|${TEST_BACKEND_PORT}:8080|' $REMOTE_PATH
 "
 
-# Deploy target stack for testing
 ssh ec2-user@$MANAGER_IP "docker stack deploy -c $REMOTE_PATH empapp_${TARGET}"
 
-# Health check
-MAX_RETRIES=12
-SLEEP_TIME=10
+# ------------------------------
+# Step 4: Health check
+# ------------------------------
 HEALTH_URL="http://${MANAGER_IP}:${TEST_FRONTEND_PORT}/"
-
-echo "⏳ Waiting for services to stabilize..."
+echo "⏳ Waiting for frontend to respond..."
 for i in $(seq 1 $MAX_RETRIES); do
   HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" $HEALTH_URL || echo 0)
   if [ "$HTTP_CODE" == "200" ]; then
@@ -68,12 +100,16 @@ if [ "$HTTP_CODE" != "200" ]; then
   exit 1
 fi
 
-# Remove old stack
+# ------------------------------
+# Step 5: Remove old stack
+# ------------------------------
 echo "🗑 Removing old $CURRENT stack..."
 ssh ec2-user@$MANAGER_IP "docker stack rm empapp_${CURRENT} || true"
 sleep 15
 
-# Switch frontend to port 80
+# ------------------------------
+# Step 6: Switch frontend to port 80
+# ------------------------------
 echo "🔄 Switching $TARGET frontend to port 80..."
 ssh ec2-user@$MANAGER_IP "sed -i 's|${TEST_FRONTEND_PORT}:80|80:80|' $REMOTE_PATH"
 
