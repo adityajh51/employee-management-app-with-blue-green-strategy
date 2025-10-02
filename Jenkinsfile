@@ -48,11 +48,7 @@ pipeline {
       steps {
         sshagent(['swarm_key']) {
           dir("${TF_DIR}") {
-            withEnv([
-              "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}",
-              "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}",
-              "AWS_DEFAULT_REGION=us-east-1"
-            ]) {
+            withCredentials([aws(accessKeyVariable: 'AWS_ACCESS_KEY_ID', credentialsId: 'aws_creds', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
               sh """
                 terraform init
                 terraform apply -auto-approve
