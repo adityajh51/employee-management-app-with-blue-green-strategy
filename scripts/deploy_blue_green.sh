@@ -22,7 +22,7 @@ TEST_FRONTEND_PORT=8082
 
 echo "➡️ Deploying $TARGET stack on test port $TEST_FRONTEND_PORT..."
 
-# Copy stack file
+# Copy stack file to manager
 scp -o StrictHostKeyChecking=no docker-stack-${TARGET}.yml ec2-user@$MANAGER_IP:/home/ec2-user/
 
 # Update image versions and test frontend port
@@ -32,7 +32,7 @@ ssh ec2-user@$MANAGER_IP "
   sed -i 's|80:80|${TEST_FRONTEND_PORT}:80|' /home/ec2-user/docker-stack-${TARGET}.yml
 "
 
-# Deploy for testing
+# Deploy target stack for testing
 ssh ec2-user@$MANAGER_IP "docker stack deploy -c /home/ec2-user/docker-stack-${TARGET}.yml empapp_${TARGET}"
 
 # Health check with retries
@@ -61,13 +61,13 @@ fi
 # Remove old stack
 echo "🗑 Removing old $CURRENT stack..."
 ssh ec2-user@$MANAGER_IP "docker stack rm empapp_${CURRENT} || true"
-sleep 15
+sleep 15  # allow Swarm to free port 80
 
 # Switch frontend to port 80
 echo "🔄 Switching $TARGET frontend to port 80..."
 ssh ec2-user@$MANAGER_IP "sed -i 's|${TEST_FRONTEND_PORT}:80|80:80|' /home/ec2-user/docker-stack-${TARGET}.yml"
 
-# Redeploy Green stack on port 80
+# Redeploy target stack on port 80
 echo "🚀 Redeploying $TARGET stack on port 80..."
 ssh ec2-user@$MANAGER_IP "docker stack deploy -c /home/ec2-user/docker-stack-${TARGET}.yml empapp_${TARGET}"
 
