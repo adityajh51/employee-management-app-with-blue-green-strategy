@@ -17,3 +17,7 @@ services:
 
 volumes:
   mysql_data:
+
+networks:
+  emp_network:
+    external: true
