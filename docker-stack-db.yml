@@ -1,0 +1,21 @@
+version: '3.9'
+
+services:
+  mysqldb:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: Admin#123
+      MYSQL_DATABASE: mysql
+    ports:
+      - "3306:3306"          # DB accessible externally if needed
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - emp_network
+
+volumes:
+  mysql_data:
+
+networks:
+  emp_network:
+    driver: overlay
