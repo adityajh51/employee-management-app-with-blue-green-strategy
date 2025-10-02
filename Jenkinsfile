@@ -1,10 +1,5 @@
 pipeline {
-  agent {
-    docker {
-      image 'hashicorp/terraform:1.11.2'
-      args  '-v $HOME/.ssh:/root/.ssh -v $HOME/.docker:/root/.docker'
-    }
-  }
+  agent any
 
   environment {
     REGISTRY = "naresh240"
@@ -22,32 +17,22 @@ pipeline {
     stage('Build Packages') {
       parallel {
         stage('Backend Build') {
-          steps {
-            dir('backend') {
-              sh 'mvn clean package -DskipTests'
-            }
-          }
+          steps { dir('backend') { sh 'mvn clean package -DskipTests' } }
         }
-
         stage('Frontend Build') {
-          steps {
-            dir('frontend') {
-              sh 'npm install && npm run build'
-            }
-          }
+          steps { dir('frontend') { sh 'npm install' } }
         }
       }
     }
 
-    stage('Build & Push Docker Images') {
+    stage('Build & Push Images') {
       steps {
         script {
           def version = "v${env.BUILD_NUMBER}"
           env.APP_VERSION = version
-
           withCredentials([usernamePassword(credentialsId: 'docker_creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
             sh """
-              echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
+              echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
               docker build -t $REGISTRY/backend-app:${version} backend/
               docker build -t $REGISTRY/frontend-app:${version} frontend/
               docker push $REGISTRY/backend-app:${version}
@@ -62,16 +47,11 @@ pipeline {
     stage('Terraform Init & Apply') {
       steps {
         sshagent(['swarm_key']) {
-          withEnv([
-            "TF_VAR_private_key=$HOME/.ssh/id_rsa",
-            '''TF_VAR_ssh_public_key=$(cat $HOME/.ssh/id_rsa.pub)'''
-          ]) {
-            dir("${TF_DIR}") {
-              sh '''
-                terraform init
-                terraform apply -auto-approve
-              '''
-            }
+          dir("${TF_DIR}") {
+            sh """
+              terraform init
+              terraform apply -auto-approve
+            """
           }
         }
       }
@@ -100,7 +80,7 @@ pipeline {
 
   post {
     failure {
-      echo "Deployment failed. Check logs for details."
+      echo "Deployment failed. Please check logs."
     }
   }
 }
