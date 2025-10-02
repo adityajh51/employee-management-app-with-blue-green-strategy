@@ -8,7 +8,7 @@ services:
       SPRING_DATASOURCE_USERNAME: root
       SPRING_DATASOURCE_PASSWORD: Admin#123
     ports:
-      - "8080:8080"    # Blue backend port for testing
+      - "8080:8080"
     depends_on:
       - mysqldb
     networks:
@@ -17,7 +17,7 @@ services:
   frontend:
     image: naresh240/frontend-app:v1
     ports:
-      - "80:80"        # Blue frontend live
+      - "80:80"
     depends_on:
       - backend
     networks:
@@ -25,4 +25,4 @@ services:
 
 networks:
   emp_network:
-    external: true
+    driver: overlay
