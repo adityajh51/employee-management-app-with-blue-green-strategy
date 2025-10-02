@@ -1,14 +1,8 @@
-# --------------------------
-# AWS Key Pair
-# --------------------------
 resource "aws_key_pair" "swarm_key" {
   key_name   = "swarm-key"
   public_key = file(var.ssh_public_key_path)
 }
 
-# --------------------------
-# AMI Data
-# --------------------------
 data "aws_ami" "ami_id" {
   most_recent = true
   owners      = ["amazon"]
@@ -19,17 +13,30 @@ data "aws_ami" "ami_id" {
   }
 }
 
-# --------------------------
+# ---------------------
 # Security Group
-# --------------------------
+# ---------------------
 locals {
-  ingress_rules = [
-    { port = 22,    protocal = "tcp" },
-    { port = 2377,  protocal = "tcp" },
-    { port = 7946,  protocal = "tcp" },
-    { port = 7946,  protocal = "udp" },
-    { port = 4789,  protocal = "udp" }
-  ]
+  ingress_rules = [{
+    port    = 22
+    protocal = "tcp"
+  },
+  {
+    port    = 2377
+    protocal="tcp"  
+  },
+  {
+    port    = 7946
+    protocal="tcp"  
+  },
+  {
+    port    = 7946
+    protocal="tcp"   
+  },
+  {
+    port    = 4789
+    protocal="udp"  
+  }]
 }
 
 resource "aws_security_group" "swarm_sg" {
@@ -37,15 +44,14 @@ resource "aws_security_group" "swarm_sg" {
   description = "Allow Docker Swarm traffic"
 
   dynamic "ingress" {
-    for_each = local.ingress_rules
+    for_each  = local.ingress_rules
     content {
-      from_port   = ingress.value.port
-      to_port     = ingress.value.port
-      protocol    = ingress.value.protocal
-      cidr_blocks = ["0.0.0.0/0"]
+      from_port        = ingress.value.port
+      to_port          = ingress.value.port
+      protocol         = ingress.value.protocal
+      cidr_blocks      = ["0.0.0.0/0"]
     }
   }
-
   egress {
     from_port   = 0
     to_port     = 0
@@ -54,9 +60,9 @@ resource "aws_security_group" "swarm_sg" {
   }
 }
 
-# --------------------------
+# ---------------------
 # Manager Node
-# --------------------------
+# ---------------------
 resource "aws_instance" "manager" {
   ami                    = data.aws_ami.ami_id.id
   instance_type          = var.instance_type
@@ -68,12 +74,14 @@ resource "aws_instance" "manager" {
     Name = "swarm-manager"
   }
 
-  depends_on = [aws_security_group.swarm_sg]
+  depends_on = [
+    aws_security_group.swarm_sg
+  ]
 }
 
-# --------------------------
+# ---------------------
 # Worker Nodes
-# --------------------------
+# ---------------------
 resource "aws_instance" "workers" {
   count                  = var.worker_count
   ami                    = data.aws_ami.ami_id.id
@@ -86,29 +94,33 @@ resource "aws_instance" "workers" {
     Name = "swarm-worker-${count.index + 1}"
   }
 
-  depends_on = [aws_instance.manager]
+  depends_on = [
+    aws_instance.manager
+  ]
 }
 
-# --------------------------
-# Wait for Swarm Manager
-# --------------------------
+# -------------------------------------
+# Wait for Swarm to be ready on Manager
+# -------------------------------------
 resource "null_resource" "wait_for_swarm_manager" {
   depends_on = [aws_instance.manager]
 
   connection {
-    type  = "ssh"
-    host  = aws_instance.manager.public_ip
-    user  = "ec2-user"
-    agent = true # Uses SSH agent (Jenkins ssh-agent)
+    type        = "ssh"
+    host        = aws_instance.manager.public_ip
+    user        = "ec2-user"
+    private_key = file("~/.ssh/id_rsa")
   }
 
   provisioner "remote-exec" {
     inline = [
       "echo 'Waiting for Docker to be installed on manager...'",
       "for i in {1..24}; do if command -v docker >/dev/null 2>&1; then echo 'Docker binary found.'; break; else echo 'Docker not installed yet...'; sleep 5; fi; done",
+
       "echo 'Waiting for Docker service to be active on manager...'",
       "sudo systemctl is-active docker >/dev/null 2>&1 || sudo systemctl start docker",
       "for i in {1..12}; do if sudo systemctl is-active docker >/dev/null 2>&1; then echo 'Docker service is running.'; break; else echo 'Docker service not active yet...'; sleep 5; fi; done",
+
       "echo 'Waiting for Swarm to be initialized on manager...'",
       "for i in {1..24}; do if sudo docker info 2>/dev/null | grep -q 'Swarm: active'; then echo 'Swarm is active.'; break; else echo 'Swarm not active yet...'; sleep 5; fi; done"
     ]
@@ -116,13 +128,13 @@ resource "null_resource" "wait_for_swarm_manager" {
 }
 
 # --------------------------
-# Get Worker Join Token (using ssh-agent)
+# Join Worker Nodes to Swarm
 # --------------------------
 data "external" "swarm_worker_token" {
   program = [
     "bash", "-c",
     <<EOT
-    TOKEN=$(ssh -o StrictHostKeyChecking=no ec2-user@${aws_instance.manager.public_ip} 'sudo docker swarm join-token -q worker')
+    TOKEN=$(ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ec2-user@${aws_instance.manager.public_ip} 'sudo docker swarm join-token -q worker')
     echo "{\"token\":\"$TOKEN\"}"
     EOT
   ]
@@ -132,9 +144,6 @@ data "external" "swarm_worker_token" {
   ]
 }
 
-# --------------------------
-# Join Worker Nodes
-# --------------------------
 resource "null_resource" "join_workers" {
   depends_on = [aws_instance.manager, aws_instance.workers]
 
@@ -144,7 +153,7 @@ resource "null_resource" "join_workers" {
     type        = "ssh"
     host        = each.value.public_ip
     user        = "ec2-user"
-    private_key = var.private_key # Injected from Jenkins or TF_VAR_private_key
+    private_key = file("~/.ssh/id_rsa")
   }
 
   provisioner "remote-exec" {
@@ -154,6 +163,7 @@ resource "null_resource" "join_workers" {
       "echo 'Waiting for Docker service to be active...'",
       "sudo systemctl is-active docker >/dev/null 2>&1 || sudo systemctl start docker",
       "for i in {1..12}; do if sudo systemctl is-active docker >/dev/null 2>&1; then echo 'Docker service is running.'; break; else echo 'Docker service not active yet...'; sleep 5; fi; done",
+
       "echo 'Joining worker to the swarm...'",
       "sudo docker swarm join --token ${data.external.swarm_worker_token.result["token"]} ${aws_instance.manager.public_ip}:2377"
     ]
