@@ -18,3 +18,7 @@ services:
       - "8082:80"
     networks:
       - emp_network
+      
+networks:
+  emp_network:
+    external: true
