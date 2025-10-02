@@ -66,11 +66,7 @@ pipeline {
     stage('Get Manager IP') {
       steps {
         script {
-          withEnv([
-              "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}",
-              "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}",
-              "AWS_DEFAULT_REGION=us-east-1"
-            ]) {
+          withCredentials([aws(accessKeyVariable: 'AWS_ACCESS_KEY_ID', credentialsId: 'aws_creds', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
             env.MANAGER_IP = sh(
               script: "cd ${TF_DIR} && terraform output -raw manager_ip",
               returnStdout: true
