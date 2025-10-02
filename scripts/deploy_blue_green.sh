@@ -66,7 +66,7 @@ done
 # ------------------------------
 if [ "$TARGET" == "blue" ]; then
   CURRENT="green"
-  TEST_FRONTEND_PORT=8080
+  TEST_FRONTEND_PORT=80
   TEST_BACKEND_PORT=8080
 else
   CURRENT="blue"
