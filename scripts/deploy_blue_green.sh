@@ -13,39 +13,62 @@ fi
 # Determine opposite color
 if [ "$TARGET" == "blue" ]; then
   CURRENT="green"
-  HEALTH_PORT=8080   # Blue frontend port
 else
   CURRENT="blue"
-  HEALTH_PORT=8082   # Green frontend port
 fi
 
-echo "➡️ Deploying to $TARGET stack..."
+# Test frontend port for new stack
+TEST_FRONTEND_PORT=8082
 
-# Copy stack file to manager
+echo "➡️ Deploying $TARGET stack on test port $TEST_FRONTEND_PORT..."
+
+# Copy stack file
 scp -o StrictHostKeyChecking=no docker-stack-${TARGET}.yml ec2-user@$MANAGER_IP:/home/ec2-user/
 
-# Update image versions
-ssh ec2-user@$MANAGER_IP \
-  "sed -i 's|backend-app:.*|backend-app:${NEW_VERSION}|' /home/ec2-user/docker-stack-${TARGET}.yml"
-ssh ec2-user@$MANAGER_IP \
-  "sed -i 's|frontend-app:.*|frontend-app:${NEW_VERSION}|' /home/ec2-user/docker-stack-${TARGET}.yml"
+# Update image versions and test frontend port
+ssh ec2-user@$MANAGER_IP "
+  sed -i 's|backend-app:.*|backend-app:${NEW_VERSION}|' /home/ec2-user/docker-stack-${TARGET}.yml
+  sed -i 's|frontend-app:.*|frontend-app:${NEW_VERSION}|' /home/ec2-user/docker-stack-${TARGET}.yml
+  sed -i 's|80:80|${TEST_FRONTEND_PORT}:80|' /home/ec2-user/docker-stack-${TARGET}.yml
+"
 
-# Deploy target stack
-ssh ec2-user@$MANAGER_IP \
-  "docker stack deploy -c /home/ec2-user/docker-stack-${TARGET}.yml empapp_${TARGET}"
+# Deploy for testing
+ssh ec2-user@$MANAGER_IP "docker stack deploy -c /home/ec2-user/docker-stack-${TARGET}.yml empapp_${TARGET}"
 
-# Wait for services to stabilize
+# Health check with retries
+MAX_RETRIES=12
+SLEEP_TIME=10
+HEALTH_URL="http://${MANAGER_IP}:${TEST_FRONTEND_PORT}/"
+
 echo "⏳ Waiting for services to stabilize..."
-sleep 60
+for i in $(seq 1 $MAX_RETRIES); do
+  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" $HEALTH_URL || echo 0)
+  if [ "$HTTP_CODE" == "200" ]; then
+    echo "✅ $TARGET stack is healthy!"
+    break
+  else
+    echo "Waiting for service... attempt $i/$MAX_RETRIES"
+    sleep $SLEEP_TIME
+  fi
+done
 
-# Health check
-HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://$MANAGER_IP:$HEALTH_PORT)
-
-if [ "$HEALTH" == "200" ]; then
-  echo "✅ New version healthy. Removing old ${CURRENT} stack..."
-  ssh ec2-user@$MANAGER_IP "docker stack rm empapp_${CURRENT} || true"
-else
-  echo "❌ Health check failed. Rolling back."
+if [ "$HTTP_CODE" != "200" ]; then
+  echo "❌ Health check failed. Rolling back..."
   ssh ec2-user@$MANAGER_IP "docker stack rm empapp_${TARGET}"
   exit 1
 fi
+
+# Remove old stack
+echo "🗑 Removing old $CURRENT stack..."
+ssh ec2-user@$MANAGER_IP "docker stack rm empapp_${CURRENT} || true"
+sleep 15
+
+# Switch frontend to port 80
+echo "🔄 Switching $TARGET frontend to port 80..."
+ssh ec2-user@$MANAGER_IP "sed -i 's|${TEST_FRONTEND_PORT}:80|80:80|' /home/ec2-user/docker-stack-${TARGET}.yml"
+
+# Redeploy Green stack on port 80
+echo "🚀 Redeploying $TARGET stack on port 80..."
+ssh ec2-user@$MANAGER_IP "docker stack deploy -c /home/ec2-user/docker-stack-${TARGET}.yml empapp_${TARGET}"
+
+echo "🎉 Deployment completed. $TARGET stack is now live on port 80."
