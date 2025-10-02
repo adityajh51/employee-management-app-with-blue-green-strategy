@@ -3,7 +3,7 @@ pipeline {
 
   environment {
     REGISTRY = "naresh240"
-    TF_DIR = "infra"
+    TF_DIR   = "infra"
   }
 
   stages {
@@ -14,12 +14,22 @@ pipeline {
       }
     }
 
+    stage('Build Packages') {
+      parallel {
+        stage('Backend Build') {
+          steps { dir('backend') { sh 'mvn clean package -DskipTests' } }
+        }
+        stage('Frontend Build') {
+          steps { dir('frontend') { sh 'npm install' } }
+        }
+      }
+    }
+
     stage('Build & Push Images') {
       steps {
         script {
           def version = "v${env.BUILD_NUMBER}"
           env.APP_VERSION = version
-
           sh """
             docker build -t $REGISTRY/backend-app:${version} backend/
             docker build -t $REGISTRY/frontend-app:${version} frontend/
@@ -32,11 +42,13 @@ pipeline {
 
     stage('Terraform Init & Apply') {
       steps {
-        dir("${TF_DIR}") {
-          sh """
-            terraform init
-            terraform apply -auto-approve
-          """
+        sshagent(['swarm_key']) {
+          dir("${TF_DIR}") {
+            sh """
+              terraform init
+              terraform apply -auto-approve
+            """
+          }
         }
       }
     }
@@ -55,9 +67,9 @@ pipeline {
 
     stage('Blue-Green Deployment') {
       steps {
-        sh """
-          bash scripts/deploy_blue_green.sh ${MANAGER_IP} ${APP_VERSION}
-        """
+        sshagent(['swarm_key']) {
+          sh "bash scripts/deploy_blue_green.sh ${MANAGER_IP} ${APP_VERSION}"
+        }
       }
     }
   }
