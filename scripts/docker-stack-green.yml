@@ -1,0 +1,39 @@
+version: '3.9'
+
+services:
+  mysqldb:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: Admin#123
+      MYSQL_DATABASE: mysql
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - emp_network
+
+  backend:
+    image: naresh240/backend-app:v2
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysqldb:3306/mysql
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: Admin#123
+    depends_on:
+      - mysqldb
+    networks:
+      - emp_network
+
+  frontend:
+    image: naresh240/frontend-app:v2
+    ports:
+      - "8081:80"
+    depends_on:
+      - backend
+    networks:
+      - emp_network
+
+volumes:
+  mysql_data:
+
+networks:
+  emp_network:
+    driver: overlay
