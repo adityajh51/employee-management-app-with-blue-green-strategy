@@ -68,7 +68,7 @@ fi
 echo "➡️ Deploying $TARGET stack on test port $TEST_FRONTEND_PORT..."
 scp -o StrictHostKeyChecking=no "$STACK_FILE" ec2-user@$MANAGER_IP:$REMOTE_PATH
 
-# Update images and test ports
+# Update backend/frontend image and test ports
 ssh ec2-user@$MANAGER_IP "
   sed -i 's|backend-app:.*|backend-app:${NEW_VERSION}|' $REMOTE_PATH
   sed -i 's|frontend-app:.*|frontend-app:${NEW_VERSION}|' $REMOTE_PATH

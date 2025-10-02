@@ -25,4 +25,4 @@ services:
 
 networks:
   emp_network:
-    driver: overlay
+    external: true
