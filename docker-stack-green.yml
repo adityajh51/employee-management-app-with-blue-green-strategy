@@ -18,7 +18,7 @@ services:
       SPRING_DATASOURCE_USERNAME: root
       SPRING_DATASOURCE_PASSWORD: Admin#123
     ports:
-      - "8081:8080"
+      - "8081:8080"     # Green backend uses different host port
     depends_on:
       - mysqldb
     networks:
@@ -27,7 +27,7 @@ services:
   frontend:
     image: naresh240/frontend-app:v1
     ports:
-      - "80:80"
+      - "8082:80"       # Green frontend uses different host port
     depends_on:
       - backend
     networks:

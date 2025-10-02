@@ -5,22 +5,23 @@ MANAGER_IP=$1
 NEW_VERSION=$2
 TARGET=$3   # blue or green
 
-# If you still want auto-detection, you can add logic here
 if [ -z "$TARGET" ]; then
-  echo "No target color specified. Exiting."
+  echo "❌ No target color specified. Exiting."
   exit 1
 fi
 
-# Determine opposite color for cleanup
+# Determine opposite color
 if [ "$TARGET" == "blue" ]; then
   CURRENT="green"
+  HEALTH_PORT=8080   # Blue frontend port
 else
   CURRENT="blue"
+  HEALTH_PORT=8082   # Green frontend port
 fi
 
-echo "Deploying to $TARGET stack..."
+echo "➡️ Deploying to $TARGET stack..."
 
-# Copy stack file
+# Copy stack file to manager
 scp -o StrictHostKeyChecking=no docker-stack-${TARGET}.yml ec2-user@$MANAGER_IP:/home/ec2-user/
 
 # Update image versions
@@ -29,17 +30,19 @@ ssh ec2-user@$MANAGER_IP \
 ssh ec2-user@$MANAGER_IP \
   "sed -i 's|frontend-app:.*|frontend-app:${NEW_VERSION}|' /home/ec2-user/docker-stack-${TARGET}.yml"
 
-# Deploy
+# Deploy target stack
 ssh ec2-user@$MANAGER_IP \
   "docker stack deploy -c /home/ec2-user/docker-stack-${TARGET}.yml empapp_${TARGET}"
 
-# Health check
-echo "Waiting for services to stabilize..."
+# Wait for services to stabilize
+echo "⏳ Waiting for services to stabilize..."
 sleep 60
-HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://$MANAGER_IP)
+
+# Health check
+HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://$MANAGER_IP:$HEALTH_PORT)
 
 if [ "$HEALTH" == "200" ]; then
-  echo "✅ New version healthy. Removing old ${CURRENT} stack."
+  echo "✅ New version healthy. Removing old ${CURRENT} stack..."
   ssh ec2-user@$MANAGER_IP "docker stack rm empapp_${CURRENT} || true"
 else
   echo "❌ Health check failed. Rolling back."
