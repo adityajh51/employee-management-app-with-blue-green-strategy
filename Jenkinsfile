@@ -1,36 +1,10 @@
-properties([
-  parameters([
-    choice(
-      name: 'TF_ACTION',
-      choices: ['apply', 'destroy'],
-      description: 'Choose Terraform action'
-    ),
-    cascadeChoiceParameter(
-      name: 'DEPLOY_COLOR',
-      description: 'Choose which stack to deploy',
-      referencedParameters: 'TF_ACTION',
-      choiceType: 'PT_SINGLE_SELECT',
-      script: [
-        $class: 'GroovyScript',
-        script: [
-          classpath: [],
-          sandbox: true,
-          script: '''
-            // If TF_ACTION is "apply", return blue/green
-            if (TF_ACTION == "apply") {
-              return ["blue", "green"]
-            } else {
-              // Empty list hides parameter
-              return []
-            }
-          '''
-        ]
-      ]
-    )
-  ])
-])
 pipeline {
   agent any
+
+  parameters {
+    choice(name: 'TF_ACTION', choices: ['apply', 'destroy'], description: 'Choose Terraform action')
+    choice(name: 'DEPLOY_COLOR', choices: ['blue', 'green'], description: 'Choose which stack to deploy (used only for apply)')
+  }
 
   environment {
     REGISTRY = "naresh240"
