@@ -45,7 +45,6 @@ pipeline {
           def version = "v${env.BUILD_NUMBER}"
           env.APP_VERSION = version
 
-          // Docker login using Jenkins credentials
           withCredentials([usernamePassword(credentialsId: 'docker_creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
             sh """
               echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
@@ -62,10 +61,10 @@ pipeline {
 
     stage('Terraform Init & Apply') {
       steps {
-        sshagent(['swarm_key']) { // SSH private key credential
+        sshagent(['swarm_key']) {
           withEnv([
-            "TF_VAR_private_key=\$HOME/.ssh/id_rsa",
-            "TF_VAR_ssh_public_key=$(cat \$HOME/.ssh/id_rsa.pub)"
+            "TF_VAR_private_key=$HOME/.ssh/id_rsa",
+            "TF_VAR_ssh_public_key=\\$(cat \$HOME/.ssh/id_rsa.pub)"
           ]) {
             dir("${TF_DIR}") {
               sh """
