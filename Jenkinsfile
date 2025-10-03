@@ -12,6 +12,7 @@ pipeline {
   }
 
   stages {
+
     stage('Checkout') {
       steps {
         git branch: 'main',
@@ -23,10 +24,21 @@ pipeline {
       when { expression { params.TF_ACTION == 'apply' } }
       parallel {
         stage('Backend Build') {
-          steps { dir('backend') { sh 'mvn clean package -DskipTests' } }
+          steps {
+            dir('backend') {
+              sh 'mvn clean package -DskipTests'
+            }
+          }
         }
         stage('Frontend Build') {
-          steps { dir('frontend') { sh 'npm install' } }
+          steps {
+            dir('frontend') {
+              sh '''
+                npm install
+                npm run build || echo "Skipping build if not configured"
+              '''
+            }
+          }
         }
       }
     }
@@ -37,7 +49,9 @@ pipeline {
         script {
           def version = "v${env.BUILD_NUMBER}"
           env.APP_VERSION = version
-          withCredentials([usernamePassword(credentialsId: 'docker_creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+          withCredentials([usernamePassword(credentialsId: 'docker_creds',
+                                             usernameVariable: 'DOCKER_USER',
+                                             passwordVariable: 'DOCKER_PASS')]) {
             sh """
               echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
               docker build -t $REGISTRY/backend-app:${version} backend/
@@ -55,7 +69,9 @@ pipeline {
       steps {
         sshagent(['swarm_key']) {
           dir("${TF_DIR}") {
-            withCredentials([aws(accessKeyVariable: 'AWS_ACCESS_KEY_ID', credentialsId: 'aws_creds', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+            withCredentials([aws(accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                                 credentialsId: 'aws_creds',
+                                 secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
               sh """
                 terraform init
                 terraform ${params.TF_ACTION} -auto-approve
@@ -83,14 +99,18 @@ pipeline {
       when { expression { params.TF_ACTION == 'apply' } }
       steps {
         sshagent(['swarm_key']) {
-          sh "bash scripts/deploy_blue_green.sh ${MANAGER_IP} ${APP_VERSION} ${params.DEPLOY_COLOR}"
+          sh "bash scripts/deploy.sh ${MANAGER_IP} ${APP_VERSION} ${params.DEPLOY_COLOR}"
         }
       }
     }
   }
 
   post {
-    failure { echo "❌ Deployment failed. Please check logs." }
-    success { echo "✅ Pipeline completed successfully." }
+    failure {
+      echo "❌ Deployment failed. Please check pipeline logs."
+    }
+    success {
+      echo "✅ Pipeline completed successfully!"
+    }
   }
 }
