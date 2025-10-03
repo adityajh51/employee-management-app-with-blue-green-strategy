@@ -26,6 +26,10 @@ locals {
     protocal = "tcp"
   },
   {
+    port    = 8082
+    protocal = "tcp"
+  },
+  {
     port    = 2377
     protocal="tcp"  
   },
