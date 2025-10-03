@@ -2,20 +2,20 @@ version: '3.9'
 
 services:
   backend:
-    image: naresh240/backend-app:v1
+    image: naresh240/backend-app:${VERSION}
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysqldb:3306/mysql
       SPRING_DATASOURCE_USERNAME: root
       SPRING_DATASOURCE_PASSWORD: Admin#123
     ports:
-      - "8080:8080"
+      - "${BACKEND_PORT}:8080"
     networks:
       - emp_network
 
   frontend:
-    image: naresh240/frontend-app:v1
+    image: naresh240/frontend-app:${VERSION}
     ports:
-      - "80:80"
+      - "${FRONTEND_PORT}:80"
     networks:
       - emp_network
 
