@@ -67,16 +67,14 @@ pipeline {
 
     stage('Terraform Action') {
       steps {
-        sshagent(['swarm_key']) {
-          dir("${TF_DIR}") {
-            withCredentials([aws(accessKeyVariable: 'AWS_ACCESS_KEY_ID',
-                                 credentialsId: 'aws_creds',
-                                 secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
-              sh """
-                terraform init
-                terraform ${params.TF_ACTION} -auto-approve
-              """
-            }
+        dir("${TF_DIR}") {
+          withCredentials([aws(accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                               credentialsId: 'aws_creds',
+                               secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+            sh """
+              terraform init
+              terraform ${params.TF_ACTION} -auto-approve
+            """
           }
         }
       }
