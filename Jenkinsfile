@@ -7,7 +7,7 @@ pipeline {
   }
 
   environment {
-    REGISTRY = "naresh240"
+    REGISTRY = "adityahiremath51"
     TF_DIR   = "infra"
   }
 
